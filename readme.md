@@ -1,4 +1,4 @@
-# Getting stated with the AspireDemo solution
+# Getting started with the AspireDemo solution
 
 This demo adds a Chat Playground page to a basic .NET Aspire solution. It provides an experience similar to that of the `Chat Playground` feature in `Azure AI Foundry`.
 
