@@ -30,6 +30,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "infra", "infra", "{A000745A
 		infra\resources.bicep = infra\resources.bicep
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "images", "images", "{84C194AD-0EEF-410E-8CD0-364F1338F597}"
+	ProjectSection(SolutionItems) = preProject
+		images\AspireDemo-ChatPlayground.gif = images\AspireDemo-ChatPlayground.gif
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
