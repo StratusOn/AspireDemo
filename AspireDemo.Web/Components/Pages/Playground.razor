@@ -1,0 +1,313 @@
+﻿@page "/playground"
+@rendermode InteractiveServer
+@attribute [StreamRendering(true)]
+
+@using Azure
+@using OpenAI.Chat
+@using Azure.Core
+@using Azure.AI.OpenAI
+@using System.ComponentModel.DataAnnotations
+
+<PageTitle>Chat Playground</PageTitle>
+
+<h1>Chat Playground</h1>
+
+<p>Modify the sample system prompt and question to suit your scenario and update the Azure OpenAI Service settings using your own.</p>
+
+<EditForm EditContext="InputEditContext" method="post" OnValidSubmit="async () => await GetAnswerWithStreaming()" FormName="ask-hercule">
+    <DataAnnotationsValidator />
+    <CustomValidation @ref="customValidation" />
+    <ValidationSummary class="text-danger" role="alert" />
+    <div class="form-floating mb-3">
+        <InputSelect @bind-Value="Input.EndpointSubdomain" class="form-control" title="Select the endpoint subdomain of your Azure OpenAI service.">
+            <option value="openai.azure.com" selected>openai.azure.com</option>
+            <option value="cognitiveservices.azure.com">cognitiveservices.azure.com</option>
+        </InputSelect>
+        <label for="endpointSubdomain" class="form-label">Endpoint Subdomain</label>
+        <ValidationMessage For="() => Input.EndpointSubdomain" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputText @bind-Value="Input.ServiceName" class="form-control" aria-required="true" />
+        <label for="serviceName" class="form-label">Service Name</label>
+        <ValidationMessage For="() => Input.ServiceName" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputText @bind-Value="Input.ModelName" class="form-control" aria-required="true" />
+        <label for="modelName" class="form-label">Model Name</label>
+        <ValidationMessage For="() => Input.ModelName" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputText @bind-Value="Input.DeploymentName" class="form-control" aria-required="true" />
+        <label for="deploymentName" class="form-label">Deployment Name</label>
+        <ValidationMessage For="() => Input.DeploymentName" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputText @bind-Value="Input.ApiKey" class="form-control" aria-required="true" type="password" />
+        <label for="apiKey" class="form-label">API Key</label>
+        <ValidationMessage For="() => Input.ApiKey" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputNumber @bind-Value="Input.MaxOutputTokenCount" class="form-control" aria-required="true" /> <span style="color: orangered;">Don't increase too high without monitoring your spend</span>
+        <label for="maxOutputTokenCount" class="form-label">Max Output Token Count</label>
+        <ValidationMessage For="() => Input.MaxOutputTokenCount" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputNumber @bind-Value="Input.Temperature" class="form-control" aria-required="true" /> <i>0..2</i> <span style="color: orangered;">(higher values close to 2 cause LSD)</span>
+        <label for="temperature" class="form-label">Temperature</label>
+        <ValidationMessage For="() => Input.Temperature" class="text-danger" />
+    </div>
+    <div class="form-floating mb-3">
+        <InputTextArea @bind-Value="Input.SystemPrompt" rows="5" class="form-control" style="height: 50px; width:100%; max-height: 600px; unicode-bidi: plaintext;" aria-required="true" placeholder="Ex: You are a helpful assistant." />
+        <label for="systemPrompt" class="form-label">System Prompt</label>
+    </div>
+    <div class="form-floating mb-3">
+        <InputTextArea @bind-Value="Input.Question" rows="10" class="form-control" style="height: 80px; width:100%; max-height: 250px; unicode-bidi: plaintext;" aria-required="true" placeholder="ex: Who's the world's best detective?" />
+        <label for="question" class="form-label">Question</label>
+        <ValidationMessage For="() => Input.Question" class="text-danger" />
+    </div>
+
+    <button type="submit" class="btn btn-lg btn-primary" style="background-color: Green; color: white; width: 100%; margin-top: 5px; font-size: 14pt;">Get Answer&#x2728;</button>
+</EditForm>
+
+<p></p>
+<p>The results are shown below in their raw form without any special rendering that is specific to their output format (e.g. markdown, HTML, etc).</p>
+
+@* // Non streaming, and keeps the results history on the page. When the code below is uncommented, make sure the EditForm has OnValidSubmit="GetAnswer" *@
+@* @if (results == null)
+{
+    <p><em>Thinking...</em></p>
+}
+else
+{
+    @foreach (var result in results)
+    {
+        <div style="border-color: dimgray; border-radius: 8px; border-width: 1px; border-style: dotted; padding: 10px; background-color: whitesmoke; margin-bottom: 10px;">
+            @result
+        </div>
+    }
+} *@
+
+@* // Streaming, and clears the previous results before rendering the new answer. When the code below is uncommented, make sure the EditForm has OnValidSubmit="async () => await GetAnswerWithStreaming()" *@
+@if (results == null)
+{
+    <p><em>Ready.</em></p>
+}
+else if (results.Count == 0)
+{
+    <p><em>Thinking...</em></p>
+}
+else
+{
+    <textarea rows="10" style="border-color: dimgray; border-radius: 8px; border-width: 1px; border-style: dotted; padding: 10px; background-color: whitesmoke; font-family: consolas; height: 300px; width:100%; max-height: 800px; unicode-bidi: plaintext;" aria-required="true" placeholder="(Answer's raw text will be displayed here)">
+        @foreach (var result in results)
+        {
+            @result
+        }
+    </textarea>
+
+    @* <div style="border-color: dimgray; border-radius: 8px; border-width: 1px; border-style: dotted; padding: 10px; background-color: whitesmoke;">
+        @foreach (var result in results)
+        {
+            @result
+        }
+    </div> *@
+}
+
+@code {
+    private const string defaultSystemPrompt = "You are a helpful assistant specialized in detective stories. Your answer's text MUST be formatted as plain text.";
+    private const string defaultQuestion = "What would a JSON file written by Poirot look like?";
+    private const string defaultEndpointSubdomain = "openai.azure.com";
+    private const string defaultAzureOpenAiServiceName = "";
+    private const string defaultModelName = "gpt-4.1";
+    private const string defaultDeploymentName = "gpt-4.1";
+    private const string defaultApiKey = "";
+    private const int defaultMaxOutputTokenCount = 1000;
+    private const float defaultTemperature = 1.0f;
+
+    private EditContext? InputEditContext = null!;
+    private CustomValidation? customValidation;
+
+    [SupplyParameterFromForm(FormName = "ask-hercule")]
+    private InputModel Input { get; set; } = new();
+
+    public List<string>? results = null;
+
+    private ChatClient? chatClient;
+
+    protected override void OnInitialized()
+    {
+        InputEditContext = new EditContext(Input);
+        Input.SystemPrompt = defaultSystemPrompt;
+        Input.Question = defaultQuestion;
+        Input.EndpointSubdomain = defaultEndpointSubdomain;
+        Input.ServiceName = defaultAzureOpenAiServiceName;
+        Input.ModelName = defaultModelName;
+        Input.DeploymentName = defaultDeploymentName;
+        Input.ApiKey = defaultApiKey;
+        Input.MaxOutputTokenCount = defaultMaxOutputTokenCount;
+        Input.Temperature = defaultTemperature;
+    }
+
+    private void InitializeChat()
+    {
+        var endpoint = new Uri("https://" + Input.ServiceName + "." + Input.EndpointSubdomain + "/");
+        var model = Input.ModelName;
+        var deploymentName = Input.DeploymentName;
+        var apiKey = Input.ApiKey;
+
+        AzureOpenAIClient azureClient = new(
+            endpoint,
+            new AzureKeyCredential(apiKey));
+        chatClient = azureClient.GetChatClient(deploymentName);
+    }
+
+    // Non streaming, and keeps the results history on the page.
+    private void GetAnswer()
+    {
+        try
+        {
+            customValidation?.ClearErrors();
+            InitializeChat();
+            if (results == null)
+            {
+                results = new List<string>();
+            }
+
+            if (!string.IsNullOrWhiteSpace(Input.Question) && chatClient != null)
+            {
+                var requestOptions = new ChatCompletionOptions()
+                    {
+                        MaxOutputTokenCount = Input.MaxOutputTokenCount,
+                        Temperature = Input.Temperature,
+                    };
+
+                List<ChatMessage> messages = new List<ChatMessage>()
+            {
+                new SystemChatMessage(Input.SystemPrompt ?? string.Empty),
+                new UserChatMessage(Input.Question),
+            };
+
+                var response = chatClient.CompleteChat(messages, requestOptions);
+                string responseText = response.Value.Content[0].Text;
+                results.Add(responseText);
+            }
+        }
+        catch (Exception ex)
+        {
+            results = null;
+            ShowCustomError("GetAnswer", ex.Message);
+        }
+    }
+
+    // Streaming, and clears the previous results before rendering the new answer.
+    private async Task GetAnswerWithStreaming()
+    {
+        try
+        {
+            customValidation?.ClearErrors();
+            results = new List<string>();
+            await InvokeAsync(this.StateHasChanged);
+            await Task.Delay(1000);
+            InitializeChat();
+
+            if (!string.IsNullOrWhiteSpace(Input.Question) && chatClient != null)
+            {
+                var streamedResults = GetResults(Input.Question);
+                await foreach (var result in streamedResults)
+                {
+                    results.Add(result);
+                    await InvokeAsync(this.StateHasChanged);
+                    await Task.Delay(50);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            results = null;
+            await InvokeAsync(this.StateHasChanged);
+            await Task.Delay(1);
+            ShowCustomError("GetAnswer (streaming)", ex.Message);
+        }
+    }
+
+    private async IAsyncEnumerable<string> GetResults(string question)
+    {
+        if (chatClient == null)
+        {
+            throw new Exception("The chat client has not been initialized.");
+        }
+
+        var requestOptions = new ChatCompletionOptions()
+            {
+                MaxOutputTokenCount = Input.MaxOutputTokenCount,
+                Temperature = Input.Temperature,
+            };
+
+        List<ChatMessage> messages = new List<ChatMessage>()
+            {
+                new SystemChatMessage(Input.SystemPrompt ?? string.Empty),
+                new UserChatMessage(Input.Question),
+            };
+
+        var response = chatClient.CompleteChatStreaming(messages, requestOptions);
+        foreach (StreamingChatCompletionUpdate update in response)
+        {
+            foreach (ChatMessageContentPart updatePart in update.ContentUpdate)
+            {
+                string responseText = updatePart.Text;
+                yield return responseText;
+            }
+        }
+    }
+
+    private void ShowCustomError(string fieldName, string errorMessage)
+    {
+        var error = new List<string>();
+        error.Add(errorMessage);
+        var errors = new Dictionary<string, List<string>>();
+        errors.Add(fieldName, error);
+        customValidation?.DisplayErrors(errors);
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Specify the question you want Hercule to answer.")]
+        [MinLength(3, ErrorMessage = "Specify a question with at least 3 characters.")]
+        [Display(Name = "Question")]
+        public string Question { get; set; } = string.Empty;
+
+        [Display(Name = "System Prompt")]
+        public string SystemPrompt { get; set; } = string.Empty;
+
+        [Display(Name = "Endpoint Subdomain")]
+        public string EndpointSubdomain { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Specify the name of the Azure OpenAI Service.")]
+        [MinLength(1, ErrorMessage = "Specify an Azure OpenAI Service name with at least 1 character.")]
+        [Display(Name = "Service Name")]
+        public string ServiceName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Specify the name of the model.")]
+        [MinLength(1, ErrorMessage = "Specify a model name with at least 1 character.")]
+        [Display(Name = "Model Name")]
+        public string ModelName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Specify the name of the model deployment.")]
+        [MinLength(1, ErrorMessage = "Specify a model deployment name with at least 1 character.")]
+        [Display(Name = "Deployment Name")]
+        public string DeploymentName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Specify the API key of the Azure OpenAI Service.")]
+        [MinLength(1, ErrorMessage = "Specify an API key with at least 1 character.")]
+        [Display(Name = "API Key")]
+        public string ApiKey { get; set; } = string.Empty;
+
+        [Range(minimum: 1, maximum: 10000, ErrorMessage = "The Max Output Token Count must be an integer between 1 and 10,000. To change the lower or upper limits, edit the source code.")]
+        [Display(Name = "Max Output Token Count")]
+        public int MaxOutputTokenCount { get; set; }
+
+        [Range(minimum: 0.0f, maximum: 2.0f, ErrorMessage = "The Temperature must be a floating number between 0.0 and 2.0.")]
+        [Display(Name = "Temperature")]
+        public float Temperature { get; set; }
+    }
+}
