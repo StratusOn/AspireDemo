@@ -4,6 +4,8 @@ This demo adds a Chat Playground page to a basic .NET Aspire solution. It provid
 
 The source code demonstrates using the *streaming* variant of the `completions` API to display the chat response fragments as they are received from the API call.
 
+![Aspire Demo](images/AspireDemo-ChatPlayground.gif)
+
 ## Pre-requisites
 
 1. Create a resource group. Name it something like `AI-RG`.
